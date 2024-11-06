@@ -1,0 +1,17 @@
+name: proj
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9.20
+  - pytorch
+  - torchvision
+  - torchaudio
+  - cudatoolkit=12.4  # Adjust this version according to your GPU support
+  - pip
+  - pip:
+      - torch==2.5.1  
+      - transformers==4.46.1  
+      - datasets==3.0.2 
+      - peft==0.13.2 
+      - evaluate==0.4.3 
