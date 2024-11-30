@@ -3,6 +3,8 @@ from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
 from evaluate import load
 from datasets import Dataset
 from torch.utils.data import DataLoader
+from sklearn.metrics.pairwise import cosine_similarity
+import torch
 
 # Initialize evaluation metrics
 rouge_metric = load("rouge")
@@ -134,3 +136,68 @@ class Evaluation:
         accuracy = self.calculate_accuracy(all_actual_answers, all_predicted_answers)
         # print(f"Accuracy: {accuracy:.2f}%")
         return accuracy
+
+    # Function to extract embeddings from T5
+    def extract_t5_embeddings(self, text):
+        """
+        Extract embeddings from the T5 model.
+        """
+        # Tokenize input text and get tensor input
+        inputs = self.tokenizer(text, return_tensors="pt", truncation=True, padding=True, max_length=512)
+        input_ids = inputs['input_ids'].to(self.model.device)
+
+        # Get hidden states (outputs from the last encoder layer)
+        with torch.no_grad():
+            outputs = self.model.encoder(input_ids=input_ids)
+            # Get embeddings (hidden states of the last encoder layer)
+            embeddings = outputs.last_hidden_state.mean(dim=1)  # Average across all token embeddings
+        
+        return embeddings
+    
+    # Function to calculate semantic similarity using T5 embeddings
+    def calculate_semantic_similarity_t5(self, predicted_steps, ground_truth_steps):
+        """
+        Calculate semantic similarity using T5 embeddings.
+        """
+        predicted_embedding = self.extract_t5_embeddings(predicted_steps)
+        ground_truth_embedding = self.extract_t5_embeddings(ground_truth_steps)
+        
+        # Compute cosine similarity
+        similarity = cosine_similarity(predicted_embedding.cpu().numpy(), ground_truth_embedding.cpu().numpy())
+        return similarity[0][0]
+    
+    # Function to evaluate semantic similarity on the entire dataset
+    def evaluate_semantic_similarity(self, eval_data):
+        """
+        Evaluate semantic similarity between generated texts and reference answers for the entire dataset.
+        
+        Args:
+            model (T5 model): Your fine-tuned T5 model.
+            tokenizer (T5 tokenizer): The tokenizer for your fine-tuned T5 model.
+            eval_data (list): A list of examples with 'question' and 'answer' keys.
+        
+        Returns:
+            dict: A dictionary containing average semantic similarity score.
+        """
+        generated_texts = []
+        references = []
+        
+        for example in eval_data:
+            input_text = example['question']
+            reference_answer = example["answer"]
+            
+            # Tokenize and generate text using the fine-tuned model
+            inputs = self.tokenizer(input_text, return_tensors="pt").to(self.model.device)
+            outputs =self.model.generate(**inputs)
+            generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+            generated_texts.append(generated_text)
+            references.append(reference_answer)
+
+        # Compute semantic similarity for the entire dataset
+        similarities = [self.calculate_semantic_similarity_t5(pred, ref) for pred, ref in zip(generated_texts, references)]
+
+        # Calculate the overall semantic similarity metric (average in this case)
+        overall_semantic_similarity = sum(similarities) / len(similarities)
+
+        return overall_semantic_similarity
